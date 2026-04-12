@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Game Dev Studio</string>
+
+    <!-- Title Screen -->
+    <string name="title_new_game">New Game</string>
+    <string name="title_continue">Continue</string>
+    <string name="title_settings">Settings</string>
+
+    <!-- Game Screen -->
+    <string name="game_studio_name">Studio Name</string>
+    <string name="game_pause">Pause</string>
+    <string name="game_speed">Speed</string>
+
+    <!-- Navigation -->
+    <string name="nav_staff">Staff</string>
+    <string name="nav_project">Project</string>
+    <string name="nav_marketing">Marketing</string>
+    <string name="nav_research">Research</string>
+    <string name="nav_finance">Finance</string>
+
+    <!-- Project -->
+    <string name="project_new">New Project</string>
+    <string name="project_genre">Genre</string>
+    <string name="project_theme">Theme</string>
+    <string name="project_title">Game Title</string>
+    <string name="project_start">Start Development</string>
+
+    <!-- Reviews -->
+    <string name="review_score">Score: %1$.1f/10</string>
+
+    <!-- Finance -->
+    <string name="finance_cash">Cash: $%1$,d</string>
+    <string name="finance_revenue">Revenue</string>
+    <string name="finance_expenses">Expenses</string>
+</resources>
