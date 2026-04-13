@@ -1,47 +1,577 @@
 # GAME DEV STUDIO — Asset Specification
 ### Complete production guide for all visual and audio assets
-**Tool:** Aseprite (pixel art) / Compose Canvas (placeholders)  
-**Palette:** Endesga 32 (32 colors) — or custom 32-color palette  
-**Rendering:** `image-rendering: pixelated` / Compose `FilterQuality.None`  
+**Tool:** Aseprite (pixel art) / Compose Canvas (placeholders)
+**Palette:** Endesga 32 (32 colors) — or custom 32-color palette
+**Rendering:** `image-rendering: pixelated` / Compose `FilterQuality.None`
 **Export:** PNG (sprites), OGG (audio), JSON (sprite atlases)
 
 ---
 
 ## 0. Placeholder Strategy (Phases 1-3)
 
-During early development, **no final assets are needed**. Use these placeholders:
+During early development, **no final PNG assets are needed**. Instead, all visuals are drawn programmatically in **Compose Canvas**. This produces pixel-art-quality placeholders that look good enough to playtest and even ship as a soft launch MVP.
 
-### Compose Canvas Placeholders
+### Why Compose Canvas instead of PNGs
+- Zero external asset files to manage
+- Instant iteration — change a color and recompile
+- Claude Code can generate and modify these directly
+- Looks way better than rectangles or emoji
+- Easy to swap out for real spritesheets later (same dimensions)
+
+### Pixel Rendering Setup
 ```kotlin
-// Staff placeholder: colored circle + role letter
-Canvas(modifier = Modifier.size(24.dp)) {
-    drawCircle(color = roleColor, radius = size.minDimension / 2)
-    // Draw role initial: "P", "A", "S", "D", "W", "M"
+// CRITICAL: disable anti-aliasing everywhere for pixel art look
+val pixelPaint = Paint().apply {
+    isAntiAlias = false
+    filterQuality = FilterQuality.None
+    style = PaintingStyle.Fill
 }
 
-// Office placeholder: gray rectangle grid
-// Furniture: smaller colored rectangles
-// Game cartridge: small colored square with border
+// In Canvas composable, disable built-in AA:
+Canvas(modifier = Modifier.size(width.dp, height.dp)) {
+    drawContext.canvas.nativeCanvas.apply {
+        // Disable AA on the native canvas too
+        drawFilter = PaintFlagsDrawFilter(
+            Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG, 0
+        )
+    }
+    // All drawing here uses integer coordinates only
+}
+
+// Scale factor: each game pixel = SCALE screen dp
+const val PIXEL_SCALE = 3 // 1 game pixel = 3dp on screen
+// Adjust based on screen density for consistent look
 ```
 
-### Emoji Fallbacks (ultra-fast prototyping)
-| Entity | Emoji | When to use |
-|--------|-------|-------------|
-| Programmer | 🧑‍💻 | Phase 1 MVP |
-| Artist | 👩‍🎨 | Phase 1 MVP |
-| Sound Designer | 🎵 | Phase 1 MVP |
-| Game Designer | 🎮 | Phase 1 MVP |
-| Writer | ✍️ | Phase 1 MVP |
-| Marketer | 📢 | Phase 1 MVP |
-| Office desk | 🖥️ | Phase 1 MVP |
-| Money | 💰 | Phase 1 MVP |
-| Game cartridge | 📦 | Phase 1 MVP |
-| Trophy | 🏆 | Phase 1 MVP |
+### Color Palette (Kotlin object)
+```kotlin
+object Palette {
+    // Skin tones
+    val SkinLight  = Color(0xFFEAD4AA)
+    val SkinMedium = Color(0xFFC28569)
+    val SkinTan    = Color(0xFFE4A672)
+    val SkinDark   = Color(0xFFB86F50)
 
-### When to Switch to Real Assets
-- **Phase 4+** (Meta & Events): Start with staff sprites and office tiles
-- **Phase 6** (Polish): Complete all remaining sprites, icons, animations
-- **Before launch:** Everything must be final pixel art
+    // Hair
+    val HairBlack  = Color(0xFF3A4466)
+    val HairBrown  = Color(0xFF733E39)
+    val HairBlonde = Color(0xFFE4A672)
+    val HairRed    = Color(0xFFA22633)
+
+    // Shirts / roles
+    val ShirtProgrammer = Color(0xFF124E89)  // blue
+    val ShirtArtist     = Color(0xFFA22633)  // red
+    val ShirtSound      = Color(0xFF3E8948)  // green
+    val ShirtDesigner   = Color(0xFFB55088)  // pink
+    val ShirtWriter     = Color(0xFF68386C)  // purple
+    val ShirtMarketer   = Color(0xFFF77622)  // orange
+    val ShirtProducer   = Color(0xFF5A6988)  // gray
+
+    // Office
+    val Floor       = Color(0xFFC28569)
+    val FloorDark   = Color(0xFFA06A50)
+    val Wall        = Color(0xFFE8E0D0)
+    val WallSide    = Color(0xFFC8B8A0)
+    val DeskTop     = Color(0xFFD0C0A0)
+    val DeskSide    = Color(0xFFA89870)
+    val Monitor     = Color(0xFF282830)
+    val Screen      = Color(0xFF40A060)
+    val Chair       = Color(0xFF484858)
+
+    // Decorations
+    val PlantPot   = Color(0xFFB86F50)
+    val PlantGreen = Color(0xFF3E8948)
+    val LeafGreen  = Color(0xFF63C74D)
+    val Shelf      = Color(0xFFA08060)
+    val BookBlue   = Color(0xFF124E89)
+    val BookRed    = Color(0xFFA22633)
+
+    // Effects
+    val Fire1  = Color(0xFFE43B44)
+    val Fire2  = Color(0xFFF77622)
+    val Fire3  = Color(0xFFFEAE34)
+    val Spark  = Color(0xFFFEE761)
+    val CodeGreen = Color(0xFF39FF14)
+    val CodeCyan  = Color(0xFF00E5FF)
+
+    // UI
+    val BgDeep    = Color(0xFF0A0A12)
+    val BgPanel   = Color(0xFF14151F)
+    val Border    = Color(0xFF2A2B3D)
+    val TextLight = Color(0xFFD4D4E8)
+    val TextMuted = Color(0xFF5A6988)
+    val AccentGreen = Color(0xFF39FF14)
+    val AccentGold  = Color(0xFFFFD700)
+}
+```
+
+---
+
+### 0.1 Staff Sprites (Compose Canvas)
+
+Each staff member is drawn as a **6×10 game pixel** character (rendered at PIXEL_SCALE).
+
+```kotlin
+// Staff character: 6px wide × 10px tall
+// Scale on screen: 6×3 = 18dp wide, 10×3 = 30dp tall
+
+fun DrawScope.drawStaffSprite(
+    x: Float,           // top-left X in game pixels
+    y: Float,           // top-left Y in game pixels
+    skin: Color,
+    hair: Color,
+    shirt: Color,
+    isWorking: Boolean,
+    animFrame: Int       // 0 or 1 for idle bounce
+) {
+    val s = PIXEL_SCALE.toFloat()
+    val bounce = if (animFrame == 1) -s else 0f
+
+    // Shadow (on ground)
+    pixel(x + 0, y + 10, Color(0x26000000), s)
+    pixel(x + 1, y + 10, Color(0x26000000), s)
+    pixel(x + 2, y + 10, Color(0x26000000), s)
+    pixel(x + 3, y + 10, Color(0x26000000), s)
+    pixel(x + 4, y + 10, Color(0x26000000), s)
+    pixel(x + 5, y + 10, Color(0x26000000), s)
+
+    // Hair (top of head, 2px tall)
+    pixel(x + 1, y + 0 + bounce, hair, s)
+    pixel(x + 2, y + 0 + bounce, hair, s)
+    pixel(x + 3, y + 0 + bounce, hair, s)
+    pixel(x + 4, y + 0 + bounce, hair, s)
+    pixel(x + 0, y + 1 + bounce, hair, s)  // side hair
+    pixel(x + 1, y + 1 + bounce, hair, s)
+    pixel(x + 2, y + 1 + bounce, hair, s)
+    pixel(x + 3, y + 1 + bounce, hair, s)
+    pixel(x + 4, y + 1 + bounce, hair, s)
+
+    // Face (2px tall)
+    pixel(x + 1, y + 2 + bounce, skin, s)
+    pixel(x + 2, y + 2 + bounce, skin, s)
+    pixel(x + 3, y + 2 + bounce, skin, s)
+    pixel(x + 4, y + 2 + bounce, skin, s)
+    pixel(x + 1, y + 3 + bounce, skin, s)
+    pixel(x + 2, y + 3 + bounce, skin, s)  // eye left
+    pixel(x + 3, y + 3 + bounce, skin, s)
+    pixel(x + 4, y + 3 + bounce, skin, s)  // eye right
+
+    // Eyes (on face row 3)
+    pixel(x + 2, y + 3 + bounce, Color(0xFF181425), s)
+    pixel(x + 4, y + 3 + bounce, Color(0xFF181425), s)
+
+    // Body / shirt (4px tall)
+    for (row in 4..7) {
+        pixel(x + 1, y + row + bounce, shirt, s)
+        pixel(x + 2, y + row + bounce, shirt, s)
+        pixel(x + 3, y + row + bounce, shirt, s)
+        pixel(x + 4, y + row + bounce, shirt, s)
+    }
+
+    // Arms
+    pixel(x + 0, y + 5 + bounce, shirt, s)
+    pixel(x + 5, y + 5 + bounce, shirt, s)
+    pixel(x + 0, y + 6 + bounce, skin, s)  // hand
+    pixel(x + 5, y + 6 + bounce, skin, s)  // hand
+
+    // Legs (2px)
+    pixel(x + 2, y + 8 + bounce, Color(0xFF3A4466), s)
+    pixel(x + 3, y + 8 + bounce, Color(0xFF3A4466), s)
+    pixel(x + 2, y + 9 + bounce, Color(0xFF262B44), s)  // shoes
+    pixel(x + 3, y + 9 + bounce, Color(0xFF262B44), s)
+}
+
+// Helper to draw a single game pixel
+private fun DrawScope.pixel(gx: Float, gy: Float, color: Color, scale: Float) {
+    drawRect(
+        color = color,
+        topLeft = Offset(gx * scale, gy * scale),
+        size = Size(scale, scale)
+    )
+}
+```
+
+#### Character Variants
+Generate 20 unique characters by combining:
+
+```kotlin
+data class StaffAppearance(
+    val skin: Color,
+    val hair: Color,
+    val shirt: Color  // determined by role
+)
+
+// Pre-generated pool of 20 appearances
+val STAFF_APPEARANCES = listOf(
+    StaffAppearance(Palette.SkinLight, Palette.HairBlack, Palette.ShirtProgrammer),
+    StaffAppearance(Palette.SkinMedium, Palette.HairBrown, Palette.ShirtArtist),
+    StaffAppearance(Palette.SkinDark, Palette.HairBlack, Palette.ShirtSound),
+    StaffAppearance(Palette.SkinTan, Palette.HairBlonde, Palette.ShirtDesigner),
+    // ... 16 more combinations
+)
+```
+
+#### Working Effects (drawn above the character)
+
+```kotlin
+fun DrawScope.drawWorkingEffect(
+    x: Float, y: Float,  // character position
+    role: StaffRole,
+    animFrame: Int        // 0-3 cycling
+) {
+    val s = PIXEL_SCALE.toFloat()
+    when (role) {
+        PROGRAMMER -> {
+            // Floating 0s and 1s in green/cyan
+            val chars = listOf(
+                Triple(x + 6, y - 2 - animFrame, Palette.CodeGreen),
+                Triple(x + 8, y - 4 - (animFrame + 1) % 4, Palette.CodeCyan),
+            )
+            chars.forEach { (fx, fy, color) ->
+                pixel(fx, fy, color, s)
+            }
+        }
+        ARTIST -> {
+            // Colorful dots
+            val dots = listOf(Palette.Fire1, Palette.Fire3, Palette.CodeCyan)
+            dots.forEachIndexed { i, color ->
+                pixel(x + 5 + i * 2, y - 1 - (animFrame + i) % 3, color, s)
+            }
+        }
+        SOUND_DESIGNER -> {
+            // Musical notes
+            pixel(x + 6, y - 2 - animFrame, Palette.AccentGold, s)
+            pixel(x + 7, y - 3 - animFrame, Palette.AccentGold, s)
+            pixel(x + 8, y - 2 - (animFrame + 2) % 4, Palette.Spark, s)
+        }
+        GAME_DESIGNER -> {
+            // Lightbulb
+            if (animFrame % 2 == 0) {
+                pixel(x + 3, y - 3, Palette.Spark, s)
+                pixel(x + 2, y - 2, Palette.Spark, s)
+                pixel(x + 3, y - 2, Palette.AccentGold, s)
+                pixel(x + 4, y - 2, Palette.Spark, s)
+                pixel(x + 3, y - 1, Palette.AccentGold, s)
+            }
+        }
+        WRITER -> {
+            // Text squiggles
+            pixel(x + 6, y - 1 - animFrame % 2, Palette.TextLight, s)
+            pixel(x + 7, y - 2 - animFrame % 2, Palette.TextLight, s)
+            pixel(x + 8, y - 1 - (animFrame + 1) % 2, Palette.TextLight, s)
+        }
+        MARKETER -> {
+            // Megaphone waves
+            pixel(x + 6, y - 1, Palette.Fire2, s)
+            pixel(x + 7, y - 2 - animFrame % 2, Palette.Fire2, s)
+            pixel(x + 8, y - 1, Palette.Fire3, s)
+        }
+        PRODUCER -> {
+            // Clipboard check
+            pixel(x + 6, y - 2, Palette.TextLight, s)
+            pixel(x + 7, y - 2, Palette.TextLight, s)
+            pixel(x + 6, y - 1, Palette.TextLight, s)
+            if (animFrame % 2 == 0) pixel(x + 7, y - 1, Palette.AccentGreen, s) // checkmark
+        }
+    }
+}
+```
+
+#### Fire Effect (Crunch / Inspiration)
+```kotlin
+fun DrawScope.drawFireEffect(
+    x: Float, y: Float,  // character position
+    animFrame: Int
+) {
+    val s = PIXEL_SCALE.toFloat()
+    val colors = listOf(Palette.Fire1, Palette.Fire2, Palette.Fire3)
+    val rng = Random(animFrame * 7 + (x * 13).toInt())
+
+    // 6-8 fire pixels around the character
+    repeat(7) {
+        val fx = x - 1 + rng.nextInt(8)
+        val fy = y - 2 + rng.nextInt(5)
+        pixel(fx, fy, colors[rng.nextInt(3)], s)
+    }
+}
+```
+
+#### Stat Popup Numbers
+```kotlin
+fun DrawScope.drawStatPopup(
+    x: Float, y: Float,
+    value: Int,
+    color: Color,
+    animProgress: Float  // 0.0 to 1.0, floats upward then fades
+) {
+    val s = PIXEL_SCALE.toFloat()
+    val offsetY = y - (animProgress * 8)
+    val alpha = (1f - animProgress).coerceIn(0f, 1f)
+
+    // Draw "+N" using mini pixel font or drawText
+    drawContext.canvas.nativeCanvas.drawText(
+        "+$value",
+        x * s, offsetY * s,
+        android.graphics.Paint().apply {
+            this.color = color.copy(alpha = alpha).toArgb()
+            textSize = 5 * s
+            typeface = Typeface.MONOSPACE
+            isAntiAlias = false
+        }
+    )
+}
+```
+
+---
+
+### 0.2 Furniture (Compose Canvas)
+
+All furniture is drawn as simple pixel blocks. No iso perspective needed for MVP — just rectangles with a highlight/shadow edge for minimal depth.
+
+```kotlin
+// Desk: 18×9 game pixels (top surface + front face)
+fun DrawScope.drawDesk(x: Float, y: Float) {
+    val s = PIXEL_SCALE.toFloat()
+    // Top surface
+    fillRect(x, y, 18, 5, Palette.DeskTop, s)
+    // Front face (darker)
+    fillRect(x, y + 5, 18, 4, Palette.DeskSide, s)
+    // Highlight edge
+    fillRect(x, y, 18, 1, Palette.DeskTop.lighten(0.15f), s)
+}
+
+// Monitor: 8×6 game pixels on top of desk
+fun DrawScope.drawMonitor(x: Float, y: Float) {
+    val s = PIXEL_SCALE.toFloat()
+    // Casing
+    fillRect(x, y, 8, 6, Palette.Monitor, s)
+    // Screen (inset 1px)
+    fillRect(x + 1, y + 1, 6, 4, Palette.Screen, s)
+    // Stand
+    fillRect(x + 3, y + 6, 2, 1, Palette.Monitor, s)
+}
+
+// Chair: 6×6 game pixels
+fun DrawScope.drawChair(x: Float, y: Float) {
+    val s = PIXEL_SCALE.toFloat()
+    fillRect(x, y, 6, 4, Palette.Chair, s)
+    fillRect(x + 1, y + 4, 1, 2, Palette.Chair, s) // leg
+    fillRect(x + 4, y + 4, 1, 2, Palette.Chair, s) // leg
+}
+
+// Plant: 6×10 game pixels
+fun DrawScope.drawPlant(x: Float, y: Float) {
+    val s = PIXEL_SCALE.toFloat()
+    // Pot
+    fillRect(x + 1, y + 6, 4, 4, Palette.PlantPot, s)
+    // Leaves
+    fillRect(x + 0, y + 2, 3, 5, Palette.PlantGreen, s)
+    fillRect(x + 3, y + 0, 3, 6, Palette.LeafGreen, s)
+    fillRect(x + 1, y + 1, 2, 2, Palette.LeafGreen, s)
+}
+
+// Bookshelf: 12×16 game pixels
+fun DrawScope.drawBookshelf(x: Float, y: Float) {
+    val s = PIXEL_SCALE.toFloat()
+    fillRect(x, y, 12, 16, Palette.Shelf, s)
+    // Shelves (horizontal lines)
+    fillRect(x, y + 5, 12, 1, Palette.DeskSide, s)
+    fillRect(x, y + 10, 12, 1, Palette.DeskSide, s)
+    // Books (colored blocks on shelves)
+    fillRect(x + 1, y + 1, 10, 4, Palette.BookBlue, s)
+    fillRect(x + 1, y + 6, 8, 4, Palette.BookRed, s)
+    fillRect(x + 1, y + 11, 10, 4, Palette.DeskTop, s)
+}
+
+// Vending machine: 8×14 game pixels
+fun DrawScope.drawVendingMachine(x: Float, y: Float) {
+    val s = PIXEL_SCALE.toFloat()
+    fillRect(x, y, 8, 14, Palette.Fire1, s)
+    fillRect(x + 1, y + 2, 6, 6, Palette.Fire1.lighten(0.2f), s)
+    // Colorful items inside
+    val itemColors = listOf(Palette.AccentGreen, Palette.Spark, Palette.CodeCyan, Palette.Fire2)
+    for (row in 0..2) for (col in 0..2) {
+        pixel(x + 2 + col * 2, y + 3 + row * 2, itemColors[(row + col) % 4], s)
+    }
+}
+
+// Helper
+private fun DrawScope.fillRect(gx: Float, gy: Float, w: Int, h: Int, color: Color, scale: Float) {
+    drawRect(color, Offset(gx * scale, gy * scale), Size(w * scale, h * scale))
+}
+```
+
+---
+
+### 0.3 Particle Effects (Compose Canvas)
+
+```kotlin
+// Confetti particle
+data class ConfettiParticle(
+    var x: Float, var y: Float,
+    val color: Color,
+    var vy: Float = -2f,
+    var vx: Float = (-1..1).random().toFloat(),
+    var life: Float = 1f
+)
+
+fun DrawScope.drawConfetti(particles: List<ConfettiParticle>) {
+    val s = PIXEL_SCALE.toFloat()
+    particles.forEach { p ->
+        if (p.life > 0) {
+            pixel(p.x, p.y, p.color.copy(alpha = p.life), s)
+            pixel(p.x + 1, p.y, p.color.copy(alpha = p.life), s)
+        }
+    }
+}
+
+// Coin collect effect
+fun DrawScope.drawCoinEffect(x: Float, y: Float, animFrame: Int) {
+    val s = PIXEL_SCALE.toFloat()
+    val floatY = y - animFrame * 0.5f
+    pixel(x, floatY, Palette.AccentGold, s)
+    pixel(x + 1, floatY, Palette.Spark, s)
+    pixel(x, floatY + 1, Palette.Spark, s)
+    pixel(x + 1, floatY + 1, Palette.AccentGold, s)
+}
+
+// Speech bubble with text
+fun DrawScope.drawSpeechBubble(x: Float, y: Float, text: String) {
+    val s = PIXEL_SCALE.toFloat()
+    val w = text.length * 4 + 4
+    // Bubble background
+    fillRect(x, y, w, 7, Color.White, s)
+    // Tail
+    pixel(x + 3, y + 7, Color.White, s)
+    pixel(x + 2, y + 8, Color.White, s)
+    // Text (using native canvas for tiny text)
+    drawContext.canvas.nativeCanvas.drawText(
+        text, (x + 2) * s, (y + 5) * s,
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.BLACK
+            textSize = 4 * s
+            typeface = Typeface.MONOSPACE
+            isAntiAlias = false
+        }
+    )
+}
+```
+
+---
+
+### 0.4 Studio View Composable (Full Assembly)
+
+```kotlin
+@Composable
+fun StudioView(
+    staff: List<StaffWithAppearance>,
+    animFrame: Int,  // ticks 0-3, updated every 300ms
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.fillMaxWidth().aspectRatio(320f / 256f)) {
+        val s = PIXEL_SCALE.toFloat()
+
+        // 1. Draw floor (checkerboard)
+        for (y in 0 until 128 step 2) {
+            for (x in 0 until 160 step 2) {
+                val checker = ((x + y) / 2) % 4 < 2
+                fillRect(x.toFloat(), y.toFloat(), 2, 2,
+                    if (checker) Palette.Floor else Palette.FloorDark, s)
+            }
+        }
+
+        // 2. Draw walls (back wall + windows)
+        fillRect(0f, 0f, 160, 8, Palette.Wall, s)
+        // Windows
+        fillRect(20f, 1f, 18, 6, Color(0xFFA8D8E8), s)
+        fillRect(60f, 1f, 18, 6, Color(0xFFA8D8E8), s)
+        fillRect(100f, 1f, 18, 6, Color(0xFFA8D8E8), s)
+
+        // 3. Draw furniture at fixed positions
+        // Row 1 desks
+        drawDesk(10f, 20f); drawMonitor(13f, 14f)
+        drawDesk(45f, 20f); drawMonitor(48f, 14f)
+        drawDesk(80f, 20f); drawMonitor(83f, 14f)
+        drawDesk(115f, 20f); drawMonitor(118f, 14f)
+
+        // Row 2 desks
+        drawDesk(20f, 55f); drawMonitor(23f, 49f)
+        drawDesk(60f, 55f); drawMonitor(63f, 49f)
+        drawDesk(100f, 55f); drawMonitor(103f, 49f)
+
+        // Decorations
+        drawPlant(145f, 30f)
+        drawBookshelf(142f, 55f)
+        drawVendingMachine(2f, 40f)
+
+        // 4. Draw staff at their desk positions
+        val deskPositions = listOf(
+            15f to 10f, 50f to 10f, 85f to 10f, 120f to 10f,
+            25f to 45f, 65f to 45f, 105f to 45f,
+            // Row 3 if > 7 staff...
+        )
+
+        staff.forEachIndexed { i, staffMember ->
+            if (i < deskPositions.size) {
+                val (dx, dy) = deskPositions[i]
+                drawStaffSprite(
+                    x = dx, y = dy,
+                    skin = staffMember.appearance.skin,
+                    hair = staffMember.appearance.hair,
+                    shirt = staffMember.appearance.shirt,
+                    isWorking = staffMember.isWorking,
+                    animFrame = (animFrame + i) % 2  // offset so they don't all bounce in sync
+                )
+                if (staffMember.isWorking) {
+                    drawWorkingEffect(dx, dy, staffMember.role, animFrame)
+                }
+                if (staffMember.isCrunching) {
+                    drawFireEffect(dx, dy, animFrame)
+                }
+            }
+        }
+    }
+}
+```
+
+### 0.5 Animation Loop
+```kotlin
+// In GameViewModel or a dedicated AnimationManager:
+private val _animFrame = MutableStateFlow(0)
+val animFrame: StateFlow<Int> = _animFrame
+
+init {
+    viewModelScope.launch {
+        while (true) {
+            delay(300) // 300ms per frame = ~3.3 FPS pixel animation
+            _animFrame.value = (_animFrame.value + 1) % 4
+        }
+    }
+}
+```
+
+### 0.6 Transition to Real Assets (Phase 4+)
+
+When switching from Canvas to PNG spritesheets:
+
+1. **Keep the same dimensions** — sprites stay 6×10 game pixels (or scale up to 16×16/24×32 for more detail)
+2. **Create a SpriteRenderer interface** so swapping Canvas → Bitmap is a single change
+3. **Export the palette** from Compose to Aseprite format (.gpl) for consistency
+
+```kotlin
+// Abstraction to make the swap painless:
+interface StaffRenderer {
+    fun DrawScope.renderStaff(x: Float, y: Float, staff: StaffWithAppearance, animFrame: Int)
+}
+
+class CanvasStaffRenderer : StaffRenderer { /* current Canvas code */ }
+class SpriteStaffRenderer(private val atlas: ImageBitmap) : StaffRenderer { /* future PNG code */ }
+```
+
+### When to Switch
+- **Phase 1-3:** Use all Canvas code above. It's good enough.
+- **Phase 4:** Start creating real sprites in Aseprite. Swap StaffRenderer.
+- **Phase 6:** All final assets in place. Remove Canvas renderers.
 
 ---
 
@@ -410,8 +940,8 @@ Elements:
 | Award Ceremony | 140 | 15-20s | — | Triumphant fanfare |
 | Game Over | 80 | 10s | — | Melancholic, short |
 
-**Format:** OGG Vorbis, 44.1kHz, mono, ~128kbps  
-**Total music:** ~7-8 tracks, ~8-10 minutes of audio  
+**Format:** OGG Vorbis, 44.1kHz, mono, ~128kbps
+**Total music:** ~7-8 tracks, ~8-10 minutes of audio
 **Source options:** Commission from chiptune artist ($200-500), generate with tools (FamiTracker, BeepBox, Bosca Ceoil), or use CC0 chiptune libraries
 
 ### Sound Effects
@@ -443,8 +973,8 @@ Elements:
 | pause | 100ms | Pause sound |
 | prestige | 1000ms | Grand ascending arpeggio |
 
-**Total SFX:** ~24 sounds  
-**Format:** OGG Vorbis, 44.1kHz, mono  
+**Total SFX:** ~24 sounds
+**Format:** OGG Vorbis, 44.1kHz, mono
 **Source options:** Generate with sfxr/jsfxr (free), bfxr, or commission
 
 ---
@@ -566,6 +1096,6 @@ Week 4:  Final polish pass on all sprites
 
 ---
 
-*Asset Specification v1.0 — Game Dev Studio*  
-*Phases 1-3: use placeholders. Phases 4-6: produce final assets per this spec.*  
+*Asset Specification v1.0 — Game Dev Studio*
+*Phases 1-3: use placeholders. Phases 4-6: produce final assets per this spec.*
 *All dimensions are in game pixels (1 game pixel = N screen pixels via integer scaling).*
